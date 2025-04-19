@@ -1,31 +1,114 @@
-const readline= require('readline/promises');
+//MCP CLient works with the import ones instead of require ones 
+import { config } from 'dotenv';
+import readline from 'readline/promises'
+import { GoogleGenAI } from "@google/genai"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 
+config();
+let tools=[]; 
 
-//to do the AI integration
-const { GoogleGenAI } =require("@google/genai");
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const ai = new GoogleGenAI({ apiKey: "YOUR_API_KEY" });
-
-async function main() {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: "Explain how AI works in a few words",
-  });
-  console.log(response.text);
-}
-
-await main();
+const mcpClient= new Client({
+    name:"example-client",
+    version:"1.0.0",
+})
 
 //to maintain the chat history
 const chatHistory=[];
-const rl=readline.createInstance({
+const rl=readline.createInterface({
     input: process.stdin,
     output: process.stdout,
 })
 
+
+
+//transport wahi h jisse client and server connect krte hn
+//in dono ko connect krne ke baad -> acess rheta h woh sare resources and tools ka jo backend pe create kiye hn 
+mcpClient.connect(new SSEClientTransport(new URL("http://localhost:3001/sse")))
+         .then(async ()=>{
+            console.log("connected to the MCP server");
+            //now this tool we have on the MCP server, we have to tell to AI so it can use those tools 
+            tools=(await mcpClient.listTools()).tools.map(tool=>{
+                return {
+                    name: tool.name,
+                    description: tool.desription,
+                    parameters:{
+                        type: tool.inputSchema.type,
+                        properties: tool.inputSchema.properties,
+                        required: tool.inputSchema.required
+                    }
+                }
+            });
+            chatLoop();
+
+         })
+
 //function that will continously asks the user input and that input it will feed into AI
 //So in this continous chat will be formed 
 
-async function chatLoop(){
+async function chatLoop(toolCall){
+
+    if(toolCall){
+        console.log("Calling tool", toolCall.name);
+        const toolResult= await mcpClient.callTool({
+            name: toolCall.name,
+            arguments:toolCall.args
+        })
+        console.log(toolResult)
+        //now we have to feed this result of the toolCAll in the chatHistory
+    }
+    
     const question= await rl.question('You: ');
+
+    chatHistory.push({
+        role:"user",
+        parts:[
+            {
+                text:question,
+                type:"text"
+            }
+        ]
+    })
+
+    const response= await ai.models.generateContent({
+        model:"gemini-2.0-flash",
+        contents: chatHistory,
+        config:{
+            tools:[
+                {
+                    functionDeclarations: tools,
+                }
+            ]
+        }
+    })
+
+    const functionCall=response.candidates[0].content.parts[ 0 ].functionCall
+    const responseText=response.candidates[0].content.parts[ 0 ].text
+
+    if(functionCall){
+        return chatLoop(functionCall);
+    }
+
+
+    chatHistory.push({
+        role:"model",
+        parts:[
+            {
+                text:responseText,
+                type:"text"
+            }
+        ]
+    })
+
+    console.log(`AI: ${responseText}`);
+    chatLoop();
 }
+
+
+
+//in this whole issue is - if we ask to post a twitter post on my accounnt
+//it does not have that capability
+//so here we willt take help of the MCP server , and we will conect this 
+//client to the MCP server
