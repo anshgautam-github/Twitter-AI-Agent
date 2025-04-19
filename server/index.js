@@ -3,7 +3,7 @@ import express from 'express';
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-
+import { createPost } from "./mcp.tool.js";
 
 //initiating the MCP Server 
 const server = new McpServer({
@@ -31,6 +31,15 @@ server.tool(
         ]}
     }
 )
+
+server.tool(
+    "createPost",
+    "Create a post on X formally known as Twitter ", {
+    status: z.string()
+}, async (arg) => {
+    const { status } = arg;
+    return createPost(status);
+})
 
 
 const app = express();

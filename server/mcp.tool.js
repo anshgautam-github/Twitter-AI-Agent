@@ -1,6 +1,6 @@
 import { config } from "dotenv"
 import { TwitterApi } from "twitter-api-v2"
-config()
+config();
 
 
 const twitterClient = new TwitterApi({
